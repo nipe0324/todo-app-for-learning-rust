@@ -1,62 +1,16 @@
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
-use serde::{Serialize, Deserialize};
-use sqlx::{Row, SqlitePool};
+use sqlx::SqlitePool;
 
-#[derive(Serialize)]
-struct Todo {
-    id: i32,
-    title: String,
-    description: String,
-    completed: bool
-}
+mod model;
+use crate::model::{Todo, NewTodo};
 
-#[derive(Deserialize)]
-pub struct NewTodo {
-    title: String,
-    description: Option<String>,
-}
-
-async fn fetch_todos(pool: &SqlitePool) -> Result<Vec<Todo>, sqlx::Error> {
-    let rows = sqlx::query("SELECT id, title, description, completed FROM todos")
-        .fetch_all(pool)
-        .await?;
-
-    let todos = rows
-        .into_iter()
-        .map(|row| Todo {
-            id: row.get("id"),
-            title: row.get("title"),
-            description: row.get("description"),
-            completed: row.get("completed"),
-        })
-        .collect();
-
-    Ok(todos)
-}
-
-async fn create_todo(pool: &SqlitePool, new_todo: &NewTodo) -> Result<Todo, sqlx::Error> {
-    let row = sqlx::query(
-        r#"
-        INSERT INTO todos (title, description, completed, created_at, updated_at)
-        VALUES ($1, $2, false, datetime('now'), datetime('now'))
-        RETURNING id, title, description, completed, created_at, updated_at;
-        "#,
-    )
-    .bind(&new_todo.title)
-    .bind(new_todo.description.as_deref())
-    .fetch_one(pool)
-    .await?;
-
-    Ok(Todo {
-        id: row.get("id"),
-        title: row.get("title"),
-        completed: row.get("completed"),
-        description: row.get("description"),
-    })
-}
+mod db;
+use crate::db::{fetch_todos, create_todo};
 
 #[get("/todos")]
-async fn get_todos(pool: web::Data<SqlitePool>) -> impl Responder {
+async fn get_todos(
+    pool: web::Data<SqlitePool>
+) -> impl Responder {
     match fetch_todos(pool.get_ref()).await {
         Ok(todos) => HttpResponse::Ok().json(todos),
         Err(e) => {
